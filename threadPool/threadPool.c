@@ -6,22 +6,24 @@
 
 #define DEAULET_MIN_THREADS 5
 #define DEAULET_MAX_THREADS 10
+
+#define DEAULET_QUEUE_CAPACITY 100
+
 enum STATUS_CODE
 {
     ON_SUCESS,
     PTR_NULL,
     MALLOC_ERROR,
-    UNKONE_ERROR,
+    UNKNOWN_ERROR,
 
 };
 
-void * threadHander(void *arg)
+void *threadHander(void *arg)
 {
-
 }
 
 /* 线程池初始化*/
-int threadPoolInit(threadpool_t *pool, int minThreadSize, int maxThreadSize)
+int threadPoolInit(threadpool_t *pool, int minThreadSize, int maxThreadSize, int queueCapacity)
 {
     if (pool == NULL)
     {
@@ -30,8 +32,8 @@ int threadPoolInit(threadpool_t *pool, int minThreadSize, int maxThreadSize)
 
     do
     {
-        /* 判断容量是否合法 */
-        if (minThreadSize < 0 || maxThreadSize < 0 || minThreadSize >= maxThreadSize)
+        /* 判断线程容量是否合法 */
+        if (minThreadSize <= 0 || maxThreadSize <= 0 || minThreadSize >= maxThreadSize)
         {
             minThreadSize = DEAULET_MIN_THREADS;
             maxThreadSize = DEAULET_MAX_THREADS;
@@ -39,6 +41,25 @@ int threadPoolInit(threadpool_t *pool, int minThreadSize, int maxThreadSize)
         /* 更新大小 */
         pool->minThreadSize = minThreadSize;
         pool->maxThreadSize = maxThreadSize;
+
+        /* 判断合法性 任务队列的容量 */
+        if (queueCapacity <= 0)
+        {
+            queueCapacity = DEAULET_QUEUE_CAPACITY;
+        }
+        /* 任务队列属性 */
+        pool->queueCapacity = queueCapacity;
+        pool->queuehead = 0;
+        pool->queuetail = 0;
+        pool->queueSize = 0;
+
+        pool->taskQueue = (task_t *)malloc(sizeof(task_t) * pool->queueCapacity);
+        if (pool->taskQueue == NULL)
+        {
+            perror("  pool->taskQueue malloc error ");
+            break;
+        }
+        memset(pool->taskQueue, 0,sizeof(task_t) * pool->queueCapacity);
 
         /* 为id分配空间 */
         pool->threadIds = (pthread_t *)malloc(sizeof(pthread_t) * pool->maxThreadSize);
@@ -61,16 +82,31 @@ int threadPoolInit(threadpool_t *pool, int minThreadSize, int maxThreadSize)
                 break;
             }
         }
+        /* 创建线程函数的返回值 */
+        if (ret != 0)
+        {
+            break;
+        }
 
         return ON_SUCESS;
     } while (0);
+
+    /* 回收任务队列的资源 */
+    if(pool->taskQueue != NULL)
+    {
+        free(pool->taskQueue);
+        pool->taskQueue = NULL;
+
+    }
+
+
 
     /* 回收线程资源*/
     for (int idx = 0; idx < pool->minThreadSize; idx++)
     {
         if (pool->threadIds[idx] != 0)
         {
-            pthread_join(pool->threadIds[idx],NULL);
+            pthread_join(pool->threadIds[idx], NULL);
         }
     }
 
@@ -80,7 +116,7 @@ int threadPoolInit(threadpool_t *pool, int minThreadSize, int maxThreadSize)
         pool->threadIds = NULL;
     }
 
-    return  UNKONE_ERROR;
+    return UNKNOWN_ERROR;
 }
 
 /* 线程池的销毁 */
